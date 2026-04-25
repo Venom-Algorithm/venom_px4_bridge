@@ -1,0 +1,26 @@
+px4_external_pose_bridge:
+  ros__parameters:
+    # Input topic from Lio/VPS algorithm (nav_msgs/Odometry, ENU/FLU frame)
+    input_odom_topic: /lio/vps/odometry
+
+    # PX4 DDS topic namespace prefix
+    fmu_prefix: /fmu
+
+    # Output topic name can be overridden; defaults to fmu_prefix + /in/vehicle_visual_odometry
+    # output_visual_odom_topic: /fmu/in/vehicle_visual_odometry
+
+    # Use covariance from input Odometry message (fall back to defaults when zero/invalid)
+    use_input_covariance: true
+
+    # Conservative default variances [x, y, z] used when input covariance is unavailable
+    # Units: m^2 for position/velocity, rad^2 for orientation
+    default_position_variance: [0.05, 0.05, 0.10]
+    default_orientation_variance: [0.02, 0.02, 0.05]
+    default_velocity_variance: [0.05, 0.05, 0.10]
+
+    # Quality gate thresholds
+    max_pose_jump_m: 0.5        # Drop measurement if position jumps more than this (metres)
+    max_velocity_jump_mps: 30.0 # Drop measurement if speed exceeds this (m/s)
+
+    # Drop visual odometry if timesync message is older than this (milliseconds)
+    timesync_timeout_ms: 1500

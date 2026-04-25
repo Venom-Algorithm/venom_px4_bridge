@@ -11,9 +11,12 @@ endif()
 
 find_package(ament_cmake REQUIRED)
 find_package(diagnostic_msgs REQUIRED)
+find_package(eigen3_cmake_module REQUIRED)
+find_package(Eigen3 REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(px4_msgs REQUIRED)
+find_package(px4_ros_com REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(tf2 REQUIRED)
@@ -58,11 +61,25 @@ ament_target_dependencies(px4_agent_monitor
   rclcpp
 )
 
+add_executable(px4_external_pose_bridge
+  src/px4_external_pose_bridge.cpp
+)
+target_include_directories(px4_external_pose_bridge PRIVATE include)
+ament_target_dependencies(px4_external_pose_bridge
+  eigen3_cmake_module
+  Eigen3
+  nav_msgs
+  px4_msgs
+  px4_ros_com
+  rclcpp
+)
+
 install(
   TARGETS
     ${PROJECT_NAME}_core
     px4_status_adapter
     px4_agent_monitor
+    px4_external_pose_bridge
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION lib/${PROJECT_NAME}
@@ -81,9 +98,12 @@ install(
 ament_export_include_directories(include)
 ament_export_dependencies(
   diagnostic_msgs
+  eigen3_cmake_module
+  Eigen3
   geometry_msgs
   nav_msgs
   px4_msgs
+  px4_ros_com
   rclcpp
   std_msgs
   tf2
