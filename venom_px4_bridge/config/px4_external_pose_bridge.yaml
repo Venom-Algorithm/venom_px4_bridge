@@ -9,7 +9,19 @@ px4_external_pose_bridge:
     # Output topic name can be overridden; defaults to fmu_prefix + /in/vehicle_visual_odometry
     # output_visual_odom_topic: /fmu/in/vehicle_visual_odometry
 
-    # Use covariance from input Odometry message (fall back to defaults when zero/invalid)
+    # pose_frame: "frd" = Forward-Right-Down frame with arbitrary heading offset (default,
+    #             correct for any VPS/LIO that starts with unknown orientation relative to North).
+    #             "ned" = North-East-Down frame (only if Lio map x-axis is aligned to True North).
+    # EKF2 behaviour: with "frd" it estimates the rotation between Lio frame and NED;
+    #                 with "ned" it assumes the Lio frame IS NED (heading fusion uses True North).
+    pose_frame: frd
+
+    # velocity_frame: "world" = Lio publishes linear velocity in world/ENU frame (Point-LIO default).
+    #                 "body"  = Lio publishes in body/FLU frame → bridge sets VELOCITY_FRAME_BODY_FRD.
+    velocity_frame: world
+
+    # Use covariance from input Odometry message (fall back to defaults when zero/invalid).
+    # Requires EKF2_EV_NOISE_MD = 0 on PX4 side (default).
     use_input_covariance: true
 
     # Conservative default variances [x, y, z] used when input covariance is unavailable

@@ -62,6 +62,16 @@ public:
 
     use_input_covariance_ = this->declare_parameter<bool>("use_input_covariance", true);
 
+    // pose_frame: "ned" assumes Lio map x=North (rare); "frd" lets EKF2 estimate the heading
+    // offset — use "frd" for any VPS that starts with arbitrary orientation (default).
+    const auto pose_frame_str = this->declare_parameter<std::string>("pose_frame", "frd");
+    pose_frame_ned_ = (pose_frame_str == "ned");
+
+    // velocity_frame: "world" = Lio publishes velocity in world/ENU frame (Point-LIO default)
+    //                 "body"  = velocity in body/FLU frame → bridge uses VELOCITY_FRAME_BODY_FRD
+    const auto vel_frame_str = this->declare_parameter<std::string>("velocity_frame", "world");
+    velocity_in_body_frame_ = (vel_frame_str == "body");
+
     const auto pos_var = this->declare_parameter<std::vector<double>>(
       "default_position_variance", {0.05, 0.05, 0.10});
     const auto ori_var = this->declare_parameter<std::vector<double>>(
@@ -170,14 +180,26 @@ private:
     const Eigen::Quaterniond q_enu_flu{q_in.w, q_in.x, q_in.y, q_in.z};
     const Eigen::Quaterniond q_ned_frd = ros_to_px4_orientation(q_enu_flu);
 
-    // Linear velocity: ENU world frame → NED
-    const Eigen::Vector3d vel_enu{
-      msg->twist.twist.linear.x,
-      msg->twist.twist.linear.y,
-      msg->twist.twist.linear.z};
-    const Eigen::Vector3d vel_ned = enu_to_ned_local_frame(vel_enu);
+    // Velocity conversion depends on what frame Lio publishes in.
+    // Point-LIO (and most LIO algorithms): world frame → use enu_to_ned_local_frame.
+    // Some algorithms publish in body frame (FLU) → use baselink_to_aircraft_body_frame.
+    Eigen::Vector3d vel_out;
+    uint8_t velocity_frame;
+    if (velocity_in_body_frame_) {
+      vel_out = baselink_to_aircraft_body_frame(Eigen::Vector3d{
+        msg->twist.twist.linear.x,
+        msg->twist.twist.linear.y,
+        msg->twist.twist.linear.z});
+      velocity_frame = px4_msgs::msg::VehicleOdometry::VELOCITY_FRAME_BODY_FRD;
+    } else {
+      vel_out = enu_to_ned_local_frame(Eigen::Vector3d{
+        msg->twist.twist.linear.x,
+        msg->twist.twist.linear.y,
+        msg->twist.twist.linear.z});
+      velocity_frame = px4_msgs::msg::VehicleOdometry::VELOCITY_FRAME_NED;
+    }
 
-    // Angular velocity: FLU body frame → FRD
+    // Angular velocity: always in body-fixed FRD (hardcoded by VehicleOdometry spec)
     const Eigen::Vector3d ang_flu{
       msg->twist.twist.angular.x,
       msg->twist.twist.angular.y,
@@ -186,25 +208,32 @@ private:
 
     // Build VehicleOdometry
     px4_msgs::msg::VehicleOdometry vo;
+    // timestamp      = message receipt/processing time (PX4 boot us)
+    // timestamp_sample = actual measurement time (EKF2 uses this for delay compensation)
     const uint64_t ts = to_px4_timestamp(msg->header.stamp);
     vo.timestamp = ts;
     vo.timestamp_sample = ts;
 
-    vo.pose_frame = px4_msgs::msg::VehicleOdometry::POSE_FRAME_NED;
+    // POSE_FRAME_NED: EKF2 expects x=True North — only if Lio map is North-aligned.
+    // POSE_FRAME_FRD: EKF2 estimates the offset between Lio frame and NED — correct for
+    //                 VPS that starts with arbitrary heading (default).
+    vo.pose_frame = pose_frame_ned_
+      ? px4_msgs::msg::VehicleOdometry::POSE_FRAME_NED
+      : px4_msgs::msg::VehicleOdometry::POSE_FRAME_FRD;
     vo.position[0] = static_cast<float>(pos_ned.x());
     vo.position[1] = static_cast<float>(pos_ned.y());
     vo.position[2] = static_cast<float>(pos_ned.z());
 
-    // PX4 quaternion layout: [w, x, y, z]
+    // PX4 quaternion layout: [w, x, y, z]  (Hamiltonian convention)
     vo.q[0] = static_cast<float>(q_ned_frd.w());
     vo.q[1] = static_cast<float>(q_ned_frd.x());
     vo.q[2] = static_cast<float>(q_ned_frd.y());
     vo.q[3] = static_cast<float>(q_ned_frd.z());
 
-    vo.velocity_frame = px4_msgs::msg::VehicleOdometry::VELOCITY_FRAME_NED;
-    vo.velocity[0] = static_cast<float>(vel_ned.x());
-    vo.velocity[1] = static_cast<float>(vel_ned.y());
-    vo.velocity[2] = static_cast<float>(vel_ned.z());
+    vo.velocity_frame = velocity_frame;
+    vo.velocity[0] = static_cast<float>(vel_out.x());
+    vo.velocity[1] = static_cast<float>(vel_out.y());
+    vo.velocity[2] = static_cast<float>(vel_out.z());
 
     vo.angular_velocity[0] = static_cast<float>(ang_frd.x());
     vo.angular_velocity[1] = static_cast<float>(ang_frd.y());
@@ -265,6 +294,8 @@ private:
   std::string timesync_status_topic_;
   std::string output_visual_odom_topic_;
   bool use_input_covariance_{true};
+  bool pose_frame_ned_{false};       // false = POSE_FRAME_FRD (default, arbitrary heading)
+  bool velocity_in_body_frame_{false};
   std::array<double, 3> default_pos_var_{0.05, 0.05, 0.10};
   std::array<double, 3> default_ori_var_{0.02, 0.02, 0.05};
   std::array<double, 3> default_vel_var_{0.05, 0.05, 0.10};
